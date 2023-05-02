@@ -62,6 +62,54 @@ docker_setup_env() {
   fi
 }
 
+# Check the variables required for startup
+docker_required_variables_env() {
+  if [[ $FE_SERVERS =~ ^.+:.+:[1-6]{0,1}[0-9]{1,4}(,.+:[0-9a-zA-Z\.\-_]+:[1-6]{0,1}[0-9]{1,4})*$ ]]; then
+    doris_warn "FE_SERVERS" $FE_SERVERS
+  else
+    doris_error "FE_SERVERS rule error！example: \$FE_NAME:\$FE_HOST_IP:\$FE_EDIT_LOG_PORT[,\$FE_NAME:\$FE_HOST_IP:\$FE_EDIT_LOG_PORT]..."
+  fi
+  if [[ $BE_ADDR =~ ^[1-2]{0,1}[0-9]{0,1}[0-9]{1}(\.[1-2]{0,1}[0-9]{0,1}[0-9]{1}){3}:[1-6]{0,1}[0-9]{1,4}$ ]]; then
+    doris_warn "BE_ADDR" $BE_ADDR
+  else
+    doris_error "BE_ADDR rule error！example: \$BE_HOST_IP:\$HEARTBEAT_SERVICE_PORT"
+  fi
+}
+
+get_doris_be_args() {
+  local feServerArray=($(echo "${FE_SERVERS}" | awk '{gsub (/,/," "); print $0}'))
+  for i in "${feServerArray[@]}"; do
+    val=${i}
+    val=${val// /}
+    tmpFeId=$(echo "${val}" | awk -F ':' '{ sub(/fe/, ""); sub(/ /, ""); print$1}')
+    tmpFeIp=$(echo "${val}" | awk -F ':' '{ sub(/ /, ""); print$2}')
+    tmpFeEditLogPort=$(echo "${val}" | awk -F ':' '{ sub(/ /, ""); print$3}')
+    check_arg "tmpFeIp" $tmpFeIp
+    feIpArray[$tmpFeId]=${tmpFeIp}
+    check_arg "tmpFeEditLogPort" $tmpFeEditLogPort
+    feEditLogPortArray[$tmpFeId]=${tmpFeEditLogPort}
+  done
+
+  declare -g MASTER_FE_IP BE_HOST_IP BE_HEARTBEAT_PORT PRIORITY_NETWORKS
+  MASTER_FE_IP=${feIpArray[1]}
+  check_arg "MASTER_FE_IP" $MASTER_FE_IP
+  BE_HOST_IP=$(echo "${BE_ADDR}" | awk -F ':' '{ sub(/ /, ""); print$1}')
+  check_arg "BE_HOST_IP" $BE_HOST_IP
+  BE_HEARTBEAT_PORT=$(echo "${BE_ADDR}" | awk -F ':' '{ sub(/ /, ""); print$2}')
+  check_arg "BE_HEARTBEAT_PORT" $BE_HEARTBEAT_PORT
+
+  PRIORITY_NETWORKS=$(echo "${BE_HOST_IP}" | awk -F '.' '{print$1"."$2"."$3".0/24"}')
+  check_arg "priority_networks" $PRIORITY_NETWORKS
+
+  doris_note "feIpArray = ${feIpArray[*]}"
+  doris_note "feEditLogPortArray = ${feEditLogPortArray[*]}"
+  doris_note "masterFe = ${feIpArray[1]}:${feEditLogPortArray[1]}"
+  doris_note "be_addr = ${BE_HOST_IP}:${BE_HEARTBEAT_PORT}"
+  doris_note "priority_networks = ${PRIORITY_NETWORKS}"
+  # wait fe start
+  check_be_status true
+}
+
 add_priority_networks() {
   doris_note "add priority_networks ${1} to ${DORIS_HOME}/be/conf/be.conf"
   echo "priority_networks = ${1}" >>${DORIS_HOME}/be/conf/be.conf
@@ -80,7 +128,7 @@ show_be_args(){
 # usage: docker_process_sql sql_script
 docker_process_sql() {
   set +e
-  mysql -uroot -P9030 -h${MASTER_FE_IP} --comments "$@" 2>/dev/null
+  mysql -uroot -P${FE_QUERY_PORT} -h${MASTER_FE_IP} --comments "$@" 2>/dev/null
 }
 
 node_role_conf(){
@@ -149,6 +197,34 @@ check_be_status() {
     fi
 }
 
+check_be_status() {
+  set +e
+  for i in {1..300}; do
+    if [[ $1 == true ]]; then
+      docker_process_sql <<<"show frontends" | grep "[[:space:]]FOLLOWER[[:space:]]"
+    else
+      docker_process_sql <<<"show backends" | grep "[[:space:]]${BE_HOST_IP}[[:space:]]" | grep "[[:space:]]${BE_HEARTBEAT_PORT}[[:space:]]"
+    fi
+    be_join_status=$?
+    if [[ "${be_join_status}" == 0 ]]; then
+      if [[ $1 == true ]]; then
+        doris_note "MASTER FE is started!"
+      else
+        doris_note "Init Check - Verify that BE is registered to FE successfully"
+        BE_ALREADY_EXISTS=true
+      fi
+      break
+    fi
+    if [[ $(( $i % 20 )) == 1 ]]; then
+      if [[ $1 == true ]]; then
+        doris_note "MASTER FE is not started. retry."
+      else
+        doris_note "BE is not register. retry."
+      fi
+    fi
+    sleep 1
+  done
+}
 
 _main() {
   if [[ $RUN_TYPE == "K8S" ]]; then

@@ -24,15 +24,17 @@ ENV JAVA_HOME="/usr/local/openjdk-8/" \
 	PATH="/opt/apache-doris/be/bin:${PATH}"
 
 # download the software to the mirror and replace it as needed
-ADD ./resource/apache-doris-be-x.x.x-bin-x86_64.tar.gz /opt/
+# ADD ./resource/apache-doris-be-1.2.2-bin-x86_64.tar.xz /opt/
+ADD ./resource/apache-doris-be-1.2.3-bin-arm.tar.xz /opt/
 
 # deploy software
 RUN apt-get update && \
-	apt-get install -y default-mysql-client && \
+	apt-get install -y default-mysql-client vim less && \
 	apt-get clean && \
 	mkdir /opt/apache-doris && \
 	cd /opt && \
-	mv apache-doris-be-x.x.x-bin-x86_64 /opt/apache-doris/be
+	mv apache-doris-be-1.2.3-bin-arm /opt/apache-doris/be
+	# mv apache-doris-be-1.2.2-bin-x86_64 /opt/apache-doris/be
 
 ADD resource/init_be.sh /opt/apache-doris/be/bin
 ADD resource/entry_point.sh /usr/local/bin

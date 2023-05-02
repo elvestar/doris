@@ -23,22 +23,22 @@ FROM openjdk:8u342-jdk
 ENV JAVA_HOME="/usr/local/openjdk-8/" \
 	PATH="/opt/apache-doris/fe/bin:${PATH}"
 
-# download the software to the mirror and replace it as needed
-# ADD ./resource/apache-doris-fe-1.2.3-bin-x86_64.tar.xz /opt/
-ADD ./resource/apache-doris-fe-1.2.3-bin-arm.tar.xz /opt/
-#ADD ./resource/apache-doris-fe-1.2.3-bin-arm/ /opt/
+ADD docker/runtime/sources.list /etc/apt/
 
-# deploy software
 RUN apt-get update && \
 	apt-get install -y default-mysql-client vim less && \
 	apt-get clean && \
-	mkdir /opt/apache-doris && \
-	cd /opt && \
-	mv apache-doris-fe-1.2.3-bin-arm /opt/apache-doris/fe
-#	mv apache-doris-fe-1.2.3-bin-x86_64 /opt/apache-doris/fe
+	mkdir -p /opt/apache-doris/fe && \
+	cd /opt/apache-doris/fe && mkdir bin conf lib log doris-meta webroot
 
-ADD resource/init_fe.sh /opt/apache-doris/fe/bin
-ADD resource/init_db.sh /opt/apache-doris/fe/bin
+ADD bin/stop_fe.sh bin/dev/start_fe.sh /opt/apache-doris/fe/bin/
+ADD conf/fe.conf conf/ldap.conf conf/*.xml /opt/apache-doris/fe/conf/
+ADD docs/build/help-resource.zip /opt/apache-doris/fe/lib/
+ADD webroot/static/* /opt/apache-doris/fe/webroot/
+ADD fe/fe-core/target/lib/* fe/fe-core/target/doris-fe.jar /opt/apache-doris/fe/lib/
+
+ADD docker/runtime/fe/resource/init_fe.sh /opt/apache-doris/fe/bin
+ADD docker/runtime/fe/resource/init_db.sh /opt/apache-doris/fe/bin
 RUN chmod 755 /opt/apache-doris/fe/bin/init_fe.sh
 
 ENTRYPOINT ["/opt/apache-doris/fe/bin/init_fe.sh"]

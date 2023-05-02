@@ -200,7 +200,7 @@ add_priority_networks() {
 # usage: docker_process_sql sql_script
 docker_process_sql() {
     set +e
-    mysql -uroot -P9030 -h${MASTER_FE_IP} --comments "$@" 2>/dev/null
+    mysql -uroot -P${FE_QUERY_PORT} -h${MASTER_FE_IP} --comments "$@" 2>/dev/null
 }
 
 docker_setup_db() {
@@ -303,6 +303,19 @@ _main() {
         doris_note "Ready to start CURRENT_FE！"
 
         if [ $CURRENT_FE_IS_MASTER == true ]; then
+            {
+                set +e
+                # export MASTER_FE_IP=${MASTER_FE_IP}
+                # doris_note "Begin to init db, MASTER_FE_IP: ${MASTER_FE_IP}"
+                doris_note "Begin to init db, FE_SERVICE_NAME: ${FE_SERVICE_NAME}"
+#                bash init_db.sh
+#                init_db_status=$?
+#                if [[ "${init_db_status}" == 0 ]]; then
+#                    doris_note "Success to init db"
+#                else
+#                    doris_note "Failed to init db"
+#                fi
+            } &
             start_fe.sh
         else
             start_fe.sh --helper ${MASTER_FE_IP}:${MASTER_FE_EDIT_PORT}
